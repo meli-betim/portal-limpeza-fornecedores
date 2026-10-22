@@ -6,6 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Portal de Fornecedores - Limpeza</title>
   <style>
+    [hidden] { display: none !important; }
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
@@ -17,24 +18,47 @@
       color: #fff;
       padding: 16px 24px;
     }
-    header h1 {
-      margin: 0;
-      font-size: 20px;
-    }
+    header h1 { margin: 0; font-size: 20px; }
     main {
-      max-width: 720px;
+      max-width: 400px;
       margin: 40px auto;
       background: #fff;
       padding: 32px;
       border-radius: 8px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.1);
     }
-    .aviso {
-      background: #fff4e5;
-      border-left: 4px solid #f0a020;
-      padding: 12px 16px;
-      margin-top: 16px;
+    label {
+      display: block;
+      margin-bottom: 16px;
       font-size: 14px;
+    }
+    input {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 6px;
+      padding: 10px;
+      font-size: 15px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+    }
+    button {
+      background: #1f3a5f;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      font-size: 15px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:disabled { background: #888; cursor: default; }
+    .erro {
+      background: #fdecea;
+      color: #8a1c1c;
+      border-left: 4px solid #c62828;
+      padding: 10px 12px;
+      font-size: 14px;
+      margin-top: 16px;
     }
   </style>
 </head>
@@ -44,13 +68,138 @@
   </header>
 
   <main>
-    <h2>Estrutura inicial</h2>
-    <p>Esta é uma página de validação da estrutura do portal.</p>
-    <p>Ainda não há login, banco de dados nem funcionalidades de sistema.</p>
+    <section id="tela-login">
+      <h2>Entrar</h2>
+      <form id="form-login">
+        <label>
+          E-mail
+          <input type="email" id="email" required autocomplete="username">
+        </label>
+        <label>
+          Senha
+          <input type="password" id="senha" required autocomplete="current-password">
+        </label>
+        <button type="submit" id="btn-entrar">Entrar</button>
+      </form>
+      <p id="erro" class="erro" hidden></p>
+    </section>
 
-    <div class="aviso">
-      <strong>Atenção:</strong> este portal é independente. Não está conectado ao sistema de limpeza em produção.
-    </div>
+    <section id="tela-liberada" hidden>
+      <h2>Acesso liberado</h2>
+      <p>Olá, <strong id="nome-usuario"></strong>.</p>
+      <p>Perfil: <strong id="funcao-usuario"></strong></p>
+      <p>As telas do portal serão construídas nas próximas etapas.</p>
+      <button type="button" id="btn-sair">Sair</button>
+    </section>
   </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import {
+      getAuth,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    // Configuração do projeto portal-limpeza-brasil (NÃO é o projeto de produção)
+    const firebaseConfig = {
+      apiKey: "AIzaSyCN0lkaB6KVk9UzN4ZmnV2gUdn-uhB-2B8",
+      authDomain: "portal-limpeza-brasil.firebaseapp.com",
+      projectId: "portal-limpeza-brasil",
+      storageBucket: "portal-limpeza-brasil.firebasestorage.app",
+      messagingSenderId: "81857359748",
+      appId: "1:81857359748:web:051d321179061a863377d1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const telaLogin = document.getElementById("tela-login");
+    const telaLiberada = document.getElementById("tela-liberada");
+    const formLogin = document.getElementById("form-login");
+    const inputEmail = document.getElementById("email");
+    const inputSenha = document.getElementById("senha");
+    const btnEntrar = document.getElementById("btn-entrar");
+    const btnSair = document.getElementById("btn-sair");
+    const erro = document.getElementById("erro");
+
+    function mostrarErro(msg) {
+      erro.textContent = msg;
+      erro.hidden = false;
+    }
+
+    function limparErro() {
+      erro.textContent = "";
+      erro.hidden = true;
+    }
+
+    function mostrarLogin() {
+      telaLiberada.hidden = true;
+      telaLogin.hidden = false;
+    }
+
+    function mostrarLiberada(nome, funcao) {
+      document.getElementById("nome-usuario").textContent = nome;
+      document.getElementById("funcao-usuario").textContent = funcao;
+      telaLogin.hidden = true;
+      telaLiberada.hidden = false;
+    }
+
+    // Confere se o usuário tem perfil ativo em usuarios/{uid}
+    async function verificarPerfil(user) {
+      const snap = await getDoc(doc(db, "usuarios", user.uid));
+      if (!snap.exists() || snap.data().ativo !== true) {
+        throw new Error("sem-perfil");
+      }
+      const dados = snap.data();
+      mostrarLiberada(dados.email || user.email, dados.funcao || "não definida");
+    }
+
+    formLogin.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      limparErro();
+      btnEntrar.disabled = true;
+      try {
+        const cred = await signInWithEmailAndPassword(
+          auth,
+          inputEmail.value.trim(),
+          inputSenha.value
+        );
+        await verificarPerfil(cred.user);
+      } catch (err) {
+        await signOut(auth).catch(() => {});
+        if (err.message === "sem-perfil") {
+          mostrarErro("Acesso não liberado. Fale com o administrador do portal.");
+        } else {
+          mostrarErro("E-mail ou senha inválidos.");
+        }
+      } finally {
+        btnEntrar.disabled = false;
+      }
+    });
+
+    btnSair.addEventListener("click", async () => {
+      await signOut(auth);
+      inputSenha.value = "";
+      mostrarLogin();
+    });
+
+    // Ao abrir a página, se já houver sessão válida, mostra a tela liberada
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          await verificarPerfil(user);
+        } catch (err) {
+          await signOut(auth).catch(() => {});
+          mostrarLogin();
+        }
+      } else {
+        mostrarLogin();
+      }
+    });
+  </script>
 </body>
 </html>
